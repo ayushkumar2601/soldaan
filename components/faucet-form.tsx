@@ -2,15 +2,17 @@
 
 import { useState, useEffect } from "react"
 import { useWallet, useConnection } from "@solana/wallet-adapter-react"
-import { LAMPORTS_PER_SOL } from "@solana/web3.js"
+import { Connection, LAMPORTS_PER_SOL } from "@solana/web3.js"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { ArrowUpRight } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
+const AIRDROP_RPC = "https://api.devnet.solana.com"
+
 export function FaucetForm() {
-  const { publicKey } = useWallet()
-  const { connection } = useConnection()
+  const { publicKey, connected } = useWallet()
+  const { connection } = useConnection() // still used for other things if needed
   const { toast } = useToast()
 
   const [amount, setAmount] = useState("")
@@ -19,29 +21,32 @@ export function FaucetForm() {
   const [cooldownEnd, setCooldownEnd] = useState<number | null>(null)
   const [cooldownSeconds, setCooldownSeconds] = useState(0)
 
+  // --- Cooldown timer -------------------------------------------------------
   useEffect(() => {
     if (!cooldownEnd) return
 
     const interval = setInterval(() => {
       const remaining = Math.ceil((cooldownEnd - Date.now()) / 1000)
+
       if (remaining <= 0) {
         setCooldownEnd(null)
         setCooldownSeconds(0)
       } else {
         setCooldownSeconds(remaining)
       }
-    }, 100)
+    }, 1000)
 
     return () => clearInterval(interval)
   }, [cooldownEnd])
 
+  // --- Validation -----------------------------------------------------------
   const validateAmount = (value: string): string | null => {
     if (!value || value.trim() === "") {
       return "Please enter an amount"
     }
 
     const num = Number.parseFloat(value)
-    if (isNaN(num)) {
+    if (Number.isNaN(num)) {
       return "Please enter a valid number"
     }
 
@@ -49,22 +54,24 @@ export function FaucetForm() {
       return "Amount must be greater than 0"
     }
 
-    if (num > 2) {
+    if (num < 0.1 || num > 2) {
       return "Please enter a valid amount between 0.1 and 2 SOL."
     }
 
     return null
   }
 
+  // --- Airdrop handler ------------------------------------------------------
   const handleDrop = async () => {
     setError("")
 
-    if (!publicKey) {
+    if (!connected || !publicKey) {
       setError("Connect your wallet first.")
       return
     }
 
     if (cooldownEnd && Date.now() < cooldownEnd) {
+      setError(`You can request again in ${cooldownSeconds || 1}s.`)
       return
     }
 
@@ -77,41 +84,47 @@ export function FaucetForm() {
     setIsLoading(true)
 
     try {
-      const lamports = Number.parseFloat(amount) * LAMPORTS_PER_SOL
+      const parsed = Number.parseFloat(amount)
+      const lamports = Math.round(parsed * LAMPORTS_PER_SOL)
 
-      const signature = await connection.requestAirdrop(publicKey, lamports)
+      // 🔑 Use a dedicated devnet connection JUST for airdrops
+      const airdropConnection = new Connection(AIRDROP_RPC, "confirmed")
 
-      await connection.confirmTransaction(signature, "confirmed")
+      // Request airdrop on official devnet RPC
+      const signature = await airdropConnection.requestAirdrop(publicKey, lamports)
 
-      // Set cooldown
-      setCooldownEnd(Date.now() + 60000)
+      const latestBlockhash = await airdropConnection.getLatestBlockhash()
+      await airdropConnection.confirmTransaction(
+        {
+          signature,
+          ...latestBlockhash,
+        },
+        "confirmed"
+      )
+
+      // Start cooldown (60s)
+      const next = Date.now() + 60_000
+      setCooldownEnd(next)
 
       toast({
         title: "SOL dropped successfully",
-        description: (
-          <div className="mt-2 space-y-2">
-            <p>{amount} SOL sent to your devnet wallet.</p>
-            <a
-              href={`https://explorer.solana.com/tx/${signature}?cluster=devnet`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300"
-            >
-              View transaction <ArrowUpRight className="h-3 w-3" />
-            </a>
-          </div>
-        ),
+        description: `${parsed} SOL sent to your devnet wallet.
+View on Explorer: https://explorer.solana.com/tx/${signature}?cluster=devnet`,
         duration: 5000,
       })
 
       setAmount("")
     } catch (err: any) {
-      console.error("[v0] Airdrop error:", err)
+      console.error("[SolDaan] Airdrop error:", err)
 
-      let errorMessage = "Something went wrong while requesting SOL. Please try again."
+      let errorMessage =
+        "Something went wrong while requesting SOL. Please try again."
 
-      if (err.message?.includes("429") || err.message?.includes("airdrop")) {
+      if (err?.message?.includes("429") || err?.message?.includes("airdrop")) {
         errorMessage = "Devnet is currently busy. Please try again in a moment."
+      } else if (err?.message?.includes("Invalid request")) {
+        errorMessage =
+          "This RPC does not support airdrops. Try again or switch RPC."
       }
 
       toast({
@@ -125,7 +138,8 @@ export function FaucetForm() {
     }
   }
 
-  const isDisabled = isLoading || (cooldownEnd !== null && Date.now() < cooldownEnd)
+  const isDisabled =
+    isLoading || (cooldownEnd !== null && Date.now() < cooldownEnd)
 
   return (
     <div className="w-full max-w-md space-y-6">
@@ -141,30 +155,41 @@ export function FaucetForm() {
           className="h-14 rounded-2xl border-white/20 bg-black/30 pr-16 text-white placeholder:text-white/40 backdrop-blur-sm transition-all focus:border-teal-400/50 focus:shadow-[0_0_20px_rgba(20,184,166,0.2)] focus:ring-0 focus:ring-offset-0"
         />
         <Button
+          type="button"
           onClick={handleDrop}
           disabled={isDisabled}
-          className="absolute right-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-transparent transition-all duration-300 hover:border-teal-400/60 hover:bg-teal-400/10 hover:shadow-[0_0_15px_rgba(20,184,166,0.3)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/20 disabled:hover:bg-transparent disabled:hover:shadow-none group"
+          className="absolute right-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-transparent transition-all duration-300 hover:border-teal-400/60 hover:bg-teal-400/10 hover:shadow-[0_0_15px_rgba(20,184,166,0.3)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/20 disabled:hover:bg-transparent disabled:hover:shadow-none group cursor-pointer"
           aria-label="Drop SOL"
         >
-          <ArrowUpRight className="h-5 w-5 text-white/80 transition-transform duration-300 group-hover:rotate-45 group-hover:text-teal-300" />
+          <ArrowUpRight className="h-5 w-5 text-white/80 transition-transform duration-300 group-hover:rotate-45 group-hover:text-white" />
         </Button>
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-400 text-center w-full">{error}</p>}
 
       <Button
+        type="button"
         onClick={handleDrop}
         disabled={isDisabled}
         className="w-full h-12 rounded-2xl bg-teal-600/80 text-white font-medium hover:bg-teal-600 transition-all duration-300 hover:shadow-[0_0_20px_rgba(20,184,166,0.4)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-teal-600/80 disabled:hover:shadow-none"
       >
-        {isLoading ? "Dropping..." : cooldownSeconds > 0 ? `Wait ${cooldownSeconds}s` : "Drop SOL"}
+        {isLoading
+          ? "Dropping..."
+          : cooldownSeconds > 0
+          ? `Wait ${cooldownSeconds}s`
+          : "Drop SOL"}
       </Button>
 
-      <p className="text-center text-xs text-white/50">Devnet only • Max 2 SOL per request • 60s cooldown</p>
+      <p className="text-center text-xs text-white/50">
+        Devnet only • Max 2 SOL per request • 60s cooldown
+      </p>
 
       {cooldownSeconds > 0 && (
-        <p className="text-center text-sm text-white/60">You can request again in {cooldownSeconds}s.</p>
+        <p className="text-center text-sm text-white/60">
+          You can request again in {cooldownSeconds}s.
+        </p>
       )}
     </div>
   )
 }
+

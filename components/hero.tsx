@@ -16,7 +16,7 @@ export function Hero() {
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="cursor-help rounded-full bg-red-500/90 px-4 py-1.5 text-xs font-medium text-white shadow-lg">
+            <div className="cursor-help rounded-full bg-red-500/70 px-4 py-1.5 text-xs font-medium text-white shadow-lg">
               Not Real Sol
             </div>
           </TooltipTrigger>

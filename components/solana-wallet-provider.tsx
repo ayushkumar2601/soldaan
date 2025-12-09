@@ -1,26 +1,140 @@
+// "use client"
+
+// import { ReactNode, useMemo } from "react"
+// import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react"
+// import { WalletModalProvider } from "@solana/wallet-adapter-react-ui"
+// import {
+//   PhantomWalletAdapter,
+//   SolflareWalletAdapter,
+// } from "@solana/wallet-adapter-wallets"
+// import { WalletAdapterNetwork } from "@solana/wallet-adapter-base"
+
+// import "@solana/wallet-adapter-react-ui/styles.css"
+
+// // ✅ Alchemy RPC, but still Solana Devnet
+// const RPC_ENDPOINT =
+//   "https://solana-devnet.g.alchemy.com/v2/jEQmlgdWPIOypiR9RR6vK"
+
+// type SolanaWalletProviderProps = {
+//   children: ReactNode
+// }
+
+// export function SolanaWalletProvider({ children }: SolanaWalletProviderProps) {
+//   const network = WalletAdapterNetwork.Devnet
+
+//   const wallets = useMemo(
+//     () => [
+//       new PhantomWalletAdapter(),
+//       new SolflareWalletAdapter({ network }),
+//     ],
+//     [network]
+//   )
+
+//   return (
+//     <ConnectionProvider endpoint={RPC_ENDPOINT}>
+//       <WalletProvider wallets={wallets} autoConnect>
+//         <WalletModalProvider>{children}</WalletModalProvider>
+//       </WalletProvider>
+//     </ConnectionProvider>
+//   )
+// }
+
+
+// "use client"
+
+// import { ReactNode, useMemo } from "react"
+// import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react"
+// import { WalletModalProvider } from "@solana/wallet-adapter-react-ui"
+// import {
+//   PhantomWalletAdapter,
+//   SolflareWalletAdapter,
+// } from "@solana/wallet-adapter-wallets"
+// import { WalletAdapterNetwork } from "@solana/wallet-adapter-base"
+// import "@solana/wallet-adapter-react-ui/styles.css"
+
+// const RPC_ENDPOINT = "https://solana-devnet.g.alchemy.com/v2/jEQmlgdWPIOypiR9RR6vK"
+
+// type SolanaWalletProviderProps = {
+//   children: ReactNode
+// }
+
+// export function SolanaWalletProvider({ children }: SolanaWalletProviderProps) {
+//   const network = WalletAdapterNetwork.Devnet
+
+//   const wallets = useMemo(() => {
+//     const list = [
+//       new PhantomWalletAdapter(),
+//       new SolflareWalletAdapter({ network }),
+//     ]
+
+//     // 🚨 Fix duplicate MetaMask adapter
+//     return list.filter(
+//       (wallet, index, self) =>
+//         index === self.findIndex((w) => w.name === wallet.name)
+//     )
+//   }, [network])
+
+//   return (
+//     <ConnectionProvider endpoint={RPC_ENDPOINT}>
+//       <WalletProvider wallets={wallets} autoConnect>
+//         <WalletModalProvider>{children}</WalletModalProvider>
+//       </WalletProvider>
+//     </ConnectionProvider>
+//   )
+// }
+
+
+
+
 "use client"
 
-import type React from "react"
-
-import { WalletAdapterNetwork } from "@solana/wallet-adapter-base"
+import { ReactNode, useMemo } from "react"
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react"
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui"
-import { PhantomWalletAdapter, SolflareWalletAdapter } from "@solana/wallet-adapter-wallets"
-import { clusterApiUrl } from "@solana/web3.js"
-import { useMemo } from "react"
+import {
+  PhantomWalletAdapter,
+  SolflareWalletAdapter,
+} from "@solana/wallet-adapter-wallets"
+import { WalletAdapterNetwork } from "@solana/wallet-adapter-base"
 
-// Import wallet adapter styles
 import "@solana/wallet-adapter-react-ui/styles.css"
 
-export function SolanaWalletProvider({ children }: { children: React.ReactNode }) {
+// ✅ Your devnet RPC (Alchemy, still Devnet)
+const RPC_ENDPOINT =
+  "https://solana-devnet.g.alchemy.com/v2/jEQmlgdWPIOypiR9RR6vK"
+
+type SolanaWalletProviderProps = {
+  children: ReactNode
+}
+
+export function SolanaWalletProvider({ children }: SolanaWalletProviderProps) {
   const network = WalletAdapterNetwork.Devnet
 
-  const endpoint = useMemo(() => clusterApiUrl(network), [network])
+  const wallets = useMemo(() => {
+    // 1️⃣ Start with the wallets you actually want to support
+    const baseWallets = [
+      new PhantomWalletAdapter(),
+      new SolflareWalletAdapter({ network }),
+      // ⚠️ DO NOT add MetaMask or EVM wallets here for now
+    ]
 
-  const wallets = useMemo(() => [new PhantomWalletAdapter(), new SolflareWalletAdapter()], [])
+    // 2️⃣ Deduplicate by wallet.name to avoid "MetaMask MetaMask" etc.
+    const seen = new Set<string>()
+    const unique = baseWallets.filter((wallet) => {
+      if (!wallet || typeof wallet.name !== "string") return false
+      if (seen.has(wallet.name)) return false
+      seen.add(wallet.name)
+      return true
+    })
+
+    // Optional: if you want to see what wallets are actually there:
+    // console.log("Solana wallets:", unique.map((w) => w.name))
+
+    return unique
+  }, [network])
 
   return (
-    <ConnectionProvider endpoint={endpoint}>
+    <ConnectionProvider endpoint={RPC_ENDPOINT}>
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>
