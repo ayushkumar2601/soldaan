@@ -87,13 +87,13 @@ User connects Phantom/Solflare wallet
 
 Enters amount (0.1–2 SOL)
 
-Backend triggers Solana devnet airdrop using a dedicated RPC
+Backend triggers Solana devnet airdrop using a dedicated RPC.
 
-Transaction is confirmed using latest blockhash
+Transaction is confirmed using latest blockhash.
 
-Cooldown begins
+Cooldown begins.
 
-Toast message displays explorer link
+Toast message displays explorer link.
 
 This ensures smooth airdrops even when public RPCs are rate-limited.
 
